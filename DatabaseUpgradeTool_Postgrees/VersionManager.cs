@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using CSharpFunctionalExtensions;
 
 namespace DatabaseUpgradeTool_Postgrees
 {
@@ -17,14 +19,14 @@ namespace DatabaseUpgradeTool_Postgrees
             _migrationsDirectory = migrationsDirectory;
         }
 
-
-        public IReadOnlyList<string> ExecuteMigrations()
+        //TODO: Переделать на функциональный стиль
+        public async Task<Result<IReadOnlyList<string>>>ExecuteMigrations()
         {
             var output = new List<string>();
-            int currentVersion = GetCurrentVersion();
+            var currentVersion = await GetCurrentVersion();
             output.Add("Current DB schema version is " + currentVersion);
 
-            IReadOnlyList<Migration> migrations = GetNewMigrations(currentVersion);
+            IReadOnlyList<Migration> migrations = GetNewMigrations(currentVersion.Value).Value;
             output.Add(migrations.Count + " migration(s) found");
 
             int? duplicatedVersion = GetDuplicatedVersion(migrations);
@@ -36,8 +38,8 @@ namespace DatabaseUpgradeTool_Postgrees
 
             foreach (var migration in migrations)
             {
-                _dbTools.ExecuteMigration(migration.GetContent());
-                UpdateVersion(migration.Version);
+                await _dbTools.ExecuteMigration(migration.GetContent());
+                await UpdateVersion(migration.Version);
                 output.Add("Executed migration: " + migration.Name);
             }
 
@@ -67,17 +69,17 @@ namespace DatabaseUpgradeTool_Postgrees
         }
 
 
-        private async void UpdateVersion(int newVersion)
+        private async Task<Result> UpdateVersion(int newVersion)
         {
             const string query = @"
                     UPDATE Settings SET Value = @Version WHERE Name = 'Version'
                     ";
 
-           await _dbTools.ExecuteAsync(query, new {Version = newVersion.ToString()});
+           return await _dbTools.ExecuteAsync(query, new {Version = newVersion.ToString()});
         }
 
 
-        private IReadOnlyList<Migration> GetNewMigrations(int currentVersion)
+        private Result<IReadOnlyList<Migration>> GetNewMigrations(int currentVersion)
         {
             // 01_MyMigration.sql
             var regex = new Regex(@"^(\d)*_(.*)(sql)$");
@@ -91,28 +93,25 @@ namespace DatabaseUpgradeTool_Postgrees
         }
 
 
-        private int GetCurrentVersion()
+        private async Task<Result<int>> GetCurrentVersion()
         {
-            if (!SettingsTableExists())
-            {
-                CreateSettingsTable();
-                return 0;
-            }
-            return GetCurrentVersionFromSettingsTable();
+            var res = await SettingsTableExists()
+                .Bind(isExist => !isExist ? CreateSettingsTable().Map(() => 0) : GetCurrentVersionFromSettingsTable());
+            return res;
         }
 
 
-        private int GetCurrentVersionFromSettingsTable()
+        private async Task<Result<int>> GetCurrentVersionFromSettingsTable()
         {
             const string query = @"
                     SELECT Value FROM Settings WHERE Name = 'Version'
                     ";
-            var res = _dbTools.QueryFirstAsync<string>(query).GetAwaiter().GetResult();
-            return int.Parse(res.Value);
+            var res = await _dbTools.QueryFirstAsync<int>(query);
+            return res;
         }
 
 
-        private void CreateSettingsTable()
+        private async Task<Result> CreateSettingsTable()
         {
             const string scriptCreateTable = @"
                 CREATE TABLE Settings
@@ -125,21 +124,22 @@ namespace DatabaseUpgradeTool_Postgrees
                INSERT INTO Settings (Name, Value)  VALUES ('Version', '0');
                ";
              const string query = scriptCreateTable + scriptInit;
-             var res=_dbTools.ExecuteAsync(query).GetAwaiter().GetResult();;
+             var res=await _dbTools.ExecuteAsync(query);
+             return res;
         }
 
 
-        private bool SettingsTableExists()
+        private async Task<Result<bool>> SettingsTableExists()
         {
-            string query = @"
+            const string query = @"
                         SELECT EXISTS
                         (
 	                        SELECT true
 	                        FROM pg_tables
 	                        WHERE tablename = 'settings'
                         );";
-            var res = _dbTools.QueryFirstAsync<bool>(query).GetAwaiter().GetResult();
-            return res.Value;
+            var res = await _dbTools.QueryFirstAsync<bool>(query);
+            return res;
         }
     }
 }

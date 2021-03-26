@@ -1,11 +1,12 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 
 namespace DatabaseUpgradeTool_Postgrees
 {
     static class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             var config=GetConfig();
             var connectionString= config.GetConnectionString("DefaultConnection");
@@ -23,8 +24,8 @@ namespace DatabaseUpgradeTool_Postgrees
             Console.WriteLine();
             Console.WriteLine();
 
-            var output = new VersionManager(connectionString).ExecuteMigrations();
-            foreach (string str in output)
+            var output = await new VersionManager(connectionString).ExecuteMigrations();
+            foreach (string str in output.Value)
             {
                 Console.WriteLine(str);
             }

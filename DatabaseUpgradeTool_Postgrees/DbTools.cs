@@ -64,20 +64,20 @@ namespace DatabaseUpgradeTool_Postgrees
         }
         
         //TODO: Изучить транзакции, возможно запись в Setting делать тут же, в пределах транзакции
-        public void ExecuteMigration(string commandText)
+        public async Task<Result> ExecuteMigration(string commandText)
         {
             Regex regex = new Regex("^GO", RegexOptions.IgnoreCase | RegexOptions.Multiline);
             string[] subCommands = regex.Split(commandText);
 
-            using var connection = new NpgsqlConnection(_connectionString);
+            await using var connection = new NpgsqlConnection(_connectionString);
             connection.Open();
-            NpgsqlTransaction transaction = connection.BeginTransaction();
-            using (var cmd = connection.CreateCommand())
+            var transaction = await connection.BeginTransactionAsync();
+            await using (var cmd = connection.CreateCommand())
             {
                 cmd.Connection = connection;
                 cmd.Transaction = transaction;
 
-                foreach (string command in subCommands)
+                foreach (var command in subCommands)
                 {
                     if (command.Length <= 0)
                         continue;
@@ -90,19 +90,19 @@ namespace DatabaseUpgradeTool_Postgrees
                     }
                     catch (SqlException)
                     {
-                        transaction.Rollback();
+                        await transaction.RollbackAsync();
                         throw;
                     }
                 }
             }
             try
             {
-                transaction.Commit();
+                await transaction.CommitAsync();
+                return Result.Success();
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
-                throw;
+               return Result.Failure($"Commit transaction Exception: '{e}'");
             }
         }
     }
