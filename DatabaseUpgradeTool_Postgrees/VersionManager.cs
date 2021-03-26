@@ -1,22 +1,21 @@
+using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using DatabaseUpgradeTool_Postgrees;
 
-
-namespace DatabaseVersioningTool
+namespace DatabaseUpgradeTool_Postgrees
 {
     public class VersionManager
     {
-        private readonly DBHelper _dbHelper;
+        private readonly DbTools _dbTools;
         private readonly string _migrationsDirectory;
         
 
         public VersionManager(string connectionString, string migrationsDirectory = @"Migrations\")
         {
-            _dbHelper = new DBHelper(connectionString);
+            _dbTools = new DbTools(connectionString);
             _migrationsDirectory = migrationsDirectory;
         }
 
@@ -39,7 +38,7 @@ namespace DatabaseVersioningTool
 
             foreach (Migration migration in migrations)
             {
-                _dbHelper.ExecuteMigration(migration.GetContent());
+                _dbTools.ExecuteMigration4Npgsql(migration.GetContent());
                 UpdateVersion(migration.Version);
                 output.Add("Executed migration: " + migration.Name);
             }
@@ -70,10 +69,14 @@ namespace DatabaseVersioningTool
         }
 
 
-        private void UpdateVersion(int newVersion)
+        private async void UpdateVersion(int newVersion)
         {
-            _dbHelper.ExecuteNonQuery(@"UPDATE dbo.Settings SET Value = @Version WHERE Name = 'Version'",
-                new SqlParameter("Version", newVersion.ToString()));
+            const string query = @"
+                    UPDATE Settings SET Value = @Version WHERE Name = 'Version'
+                    ";
+
+           await _dbTools.ExecuteAsync(query, new {Version = newVersion.ToString()});
+            //_dbTools.ExecuteNonQuery(query, new SqlParameter("Version", newVersion.ToString()));
         }
 
 
@@ -81,7 +84,6 @@ namespace DatabaseVersioningTool
         {
             // 01_MyMigration.sql
             var regex = new Regex(@"^(\d)*_(.*)(sql)$");
-
             return new DirectoryInfo(_migrationsDirectory)
                 .GetFiles()
                 .Where(x => regex.IsMatch(x.Name))
@@ -106,35 +108,42 @@ namespace DatabaseVersioningTool
 
         private int GetCurrentVersionFromSettingsTable()
         {
-            string version = _dbHelper.ExecuteScalar<string>("SELECT Value FROM dbo.Settings WHERE Name = 'Version'");
-            return int.Parse(version);
+            const string query = @"
+                    SELECT Value FROM Settings WHERE Name = 'Version'
+                    ";
+            var res = _dbTools.QueryFirstAsync<string>(query).GetAwaiter().GetResult();
+            return int.Parse(res.Value);
         }
 
 
         private void CreateSettingsTable()
         {
-            string query = @"
-                CREATE TABLE dbo.Settings
+            const string scriptCreateTable = @"
+                CREATE TABLE Settings
                 (
-                    Name nvarchar(50) NOT NULL PRIMARY KEY,
-                    Value nvarchar(500) NOT NULL
-                )
-
-                INSERT dbo.Settings (Name, Value)
-                VALUES ('Version', '0')";
-
-            _dbHelper.ExecuteNonQuery(query);
+                    Name varchar(50) NOT NULL PRIMARY KEY,
+                    Value varchar(500) NOT NULL
+                );
+                ";
+            const string scriptInit = @"
+               INSERT INTO Settings (Name, Value)  VALUES ('Version', '0');
+               ";
+             const string query = scriptCreateTable + scriptInit;
+             var res=_dbTools.ExecuteAsync(query).GetAwaiter().GetResult();;
         }
 
 
         private bool SettingsTableExists()
         {
             string query = @"
-                IF (OBJECT_ID('dbo.Settings', 'table') IS NULL)
-                SELECT 0
-                ELSE SELECT 1";
-
-            return _dbHelper.ExecuteScalar<int>(query) == 1;
+                        SELECT EXISTS
+                        (
+	                        SELECT true
+	                        FROM pg_tables
+	                        WHERE tablename = 'settings'
+                        );";
+            var res = _dbTools.QueryFirstAsync<bool>(query).GetAwaiter().GetResult();
+            return res.Value;
         }
     }
 }

@@ -1,0 +1,6 @@
+﻿CREATE TABLE Cars
+(
+    UserID BIGINT NOT NULL PRIMARY KEY,
+    Name varchar(200) NOT NULL,
+    Speed INT NOT NULL
+);
