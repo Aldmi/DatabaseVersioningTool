@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 
 namespace DatabaseUpgradeTool_Postgrees
@@ -24,7 +23,7 @@ namespace DatabaseUpgradeTool_Postgrees
             Console.WriteLine();
             Console.WriteLine();
 
-            IReadOnlyList<string> output = new VersionManager(connectionString).ExecuteMigrations();
+            var output = new VersionManager(connectionString).ExecuteMigrations();
             foreach (string str in output)
             {
                 Console.WriteLine(str);

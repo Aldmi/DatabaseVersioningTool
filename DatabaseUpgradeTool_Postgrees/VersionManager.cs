@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -36,9 +34,9 @@ namespace DatabaseUpgradeTool_Postgrees
                 return output;
             }
 
-            foreach (Migration migration in migrations)
+            foreach (var migration in migrations)
             {
-                _dbTools.ExecuteMigration4Npgsql(migration.GetContent());
+                _dbTools.ExecuteMigration(migration.GetContent());
                 UpdateVersion(migration.Version);
                 output.Add("Executed migration: " + migration.Name);
             }
@@ -76,7 +74,6 @@ namespace DatabaseUpgradeTool_Postgrees
                     ";
 
            await _dbTools.ExecuteAsync(query, new {Version = newVersion.ToString()});
-            //_dbTools.ExecuteNonQuery(query, new SqlParameter("Version", newVersion.ToString()));
         }
 
 
@@ -101,7 +98,6 @@ namespace DatabaseUpgradeTool_Postgrees
                 CreateSettingsTable();
                 return 0;
             }
-
             return GetCurrentVersionFromSettingsTable();
         }
 

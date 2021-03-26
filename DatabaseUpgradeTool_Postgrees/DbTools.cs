@@ -12,7 +12,6 @@ namespace DatabaseUpgradeTool_Postgrees
     public class DbTools
     {
         private readonly string _connectionString;
-
         public DbTools(string connectionString)
         {
             _connectionString = connectionString;
@@ -64,27 +63,8 @@ namespace DatabaseUpgradeTool_Postgrees
             }
         }
         
-        
-
-        public void ExecuteNonQuery(string commandText, params SqlParameter[] parameters)
-        {
-            using (SqlConnection cnn = new SqlConnection(_connectionString))
-            {
-                SqlCommand cmd = new SqlCommand(commandText, cnn)
-                {
-                    CommandType = CommandType.Text
-                };
-                foreach (SqlParameter parameter in parameters)
-                {
-                    cmd.Parameters.Add(parameter);
-                }
-
-                cnn.Open();
-                cmd.ExecuteNonQuery();
-            }
-        }
-
-        public void ExecuteMigration4Npgsql(string commandText)
+        //TODO: Изучить транзакции, возможно запись в Setting делать тут же, в пределах транзакции
+        public void ExecuteMigration(string commandText)
         {
             Regex regex = new Regex("^GO", RegexOptions.IgnoreCase | RegexOptions.Multiline);
             string[] subCommands = regex.Split(commandText);
@@ -115,7 +95,6 @@ namespace DatabaseUpgradeTool_Postgrees
                     }
                 }
             }
-
             try
             {
                 transaction.Commit();
