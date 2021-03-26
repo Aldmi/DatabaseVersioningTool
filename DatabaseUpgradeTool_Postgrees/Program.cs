@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using CSharpFunctionalExtensions;
 using Microsoft.Extensions.Configuration;
 
 namespace DatabaseUpgradeTool_Postgrees
@@ -24,11 +25,23 @@ namespace DatabaseUpgradeTool_Postgrees
             Console.WriteLine();
             Console.WriteLine();
 
-            var output = await new VersionManager(connectionString).ExecuteMigrations();
-            foreach (string str in output.Value)
-            {
-                Console.WriteLine(str);
-            }
+            await new VersionManager(connectionString).ExecuteMigrations()
+                .Finally(result =>
+                {
+                    if (result.IsFailure)
+                    {
+                        Console.WriteLine(result.Error);
+                    }
+                    else
+                    {
+                        foreach (var str in result.Value)
+                        {
+                            Console.WriteLine(str);
+                        }
+                    }
+                    return result;
+                });
+            
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
         }

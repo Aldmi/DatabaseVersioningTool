@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -18,42 +19,49 @@ namespace DatabaseUpgradeTool_Postgrees
             _dbTools = new DbTools(connectionString);
             _migrationsDirectory = migrationsDirectory;
         }
-
-        //TODO: Переделать на функциональный стиль
-        public async Task<Result<IReadOnlyList<string>>>ExecuteMigrations()
+        
+        public async Task<Result<IEnumerable<string>>>ExecuteMigrations()
         {
             var output = new List<string>();
-            var currentVersion = await GetCurrentVersion();
-            output.Add("Current DB schema version is " + currentVersion);
-
-            IReadOnlyList<Migration> migrations = GetNewMigrations(currentVersion.Value).Value;
-            output.Add(migrations.Count + " migration(s) found");
-
-            int? duplicatedVersion = GetDuplicatedVersion(migrations);
-            if (duplicatedVersion != null)
-            {
-                output.Add("Non-unique migration found: " + duplicatedVersion);
-                return output;
-            }
-
-            foreach (var migration in migrations)
-            {
-                await _dbTools.ExecuteMigration(migration.GetContent());
-                await UpdateVersion(migration.Version);
-                output.Add("Executed migration: " + migration.Name);
-            }
-
-            if (!migrations.Any())
-            {
-                output.Add("No updates for the current schema version");
-            }
-            else
-            {
-                int newVersion = migrations.Last().Version;
-                output.Add("New DB schema version is " + newVersion);
-            }
-
-            return output;
+            var res = await GetCurrentVersion()
+                .Bind(currentVersion => 
+                {
+                    output.Add("Current DB schema version is " + currentVersion);
+                    return GetNewMigrations(currentVersion);
+                })
+                .Bind(migrations => 
+                {
+                    output.Add(migrations.Count + " migration(s) found");
+                    int? duplicatedVersion = GetDuplicatedVersion(migrations);
+                    return duplicatedVersion != null ? Result.Failure<IReadOnlyList<Migration>>("Non-unique migration found: " + duplicatedVersion) : Result.Success(migrations);
+                })
+                .Bind(async migrations =>
+                {
+                    var mirgationResults = new List<Result>();
+                    foreach (var migration in migrations)
+                    {
+                         var mirgationRes=await _dbTools.ExecuteMigration(migration.GetContent()).Bind(() => UpdateVersion(migration.Version));
+                         mirgationResults.Add(mirgationRes);
+                         output.Add("Executed migration: " + migration.Name);
+                    }
+                    return Result.Combine(mirgationResults).Map(() => migrations);
+                })
+                .Bind(migrations =>
+                {
+                    if (!migrations.Any())
+                    {
+                        output.Add("No updates for the current schema version");
+                    }
+                    else
+                    {
+                        int newVersion = migrations.Last().Version;
+                        output.Add("New DB schema version is " + newVersion);
+                    }
+                    return Result.Success();
+                })
+                .Map(() => output as IEnumerable<string>);
+            
+            return res;
         }
 
 
